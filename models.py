@@ -5,6 +5,7 @@ Discriminator: image (B, 3, 64, 64) -> scalar logit.
 """
 import torch
 import torch.nn as nn
+from torch.nn.utils import spectral_norm as SN
 
 
 def weights_init(m):
@@ -48,26 +49,25 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
+    """Spectral-norm D. BN is dropped because SN already constrains layer scale
+    and the two often fight each other."""
     def __init__(self, d_feat=64, channels=3):
         super().__init__()
         self.main = nn.Sequential(
             # channels x 64 x 64
-            nn.Conv2d(channels, d_feat, 4, 2, 1, bias=False),
+            SN(nn.Conv2d(channels, d_feat, 4, 2, 1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
             # d_feat x 32 x 32
-            nn.Conv2d(d_feat, d_feat * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(d_feat * 2),
+            SN(nn.Conv2d(d_feat, d_feat * 2, 4, 2, 1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
             # (d_feat*2) x 16 x 16
-            nn.Conv2d(d_feat * 2, d_feat * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(d_feat * 4),
+            SN(nn.Conv2d(d_feat * 2, d_feat * 4, 4, 2, 1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
             # (d_feat*4) x 8 x 8
-            nn.Conv2d(d_feat * 4, d_feat * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(d_feat * 8),
+            SN(nn.Conv2d(d_feat * 4, d_feat * 8, 4, 2, 1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
             # (d_feat*8) x 4 x 4
-            nn.Conv2d(d_feat * 8, 1, 4, 1, 0, bias=False),
+            SN(nn.Conv2d(d_feat * 8, 1, 4, 1, 0, bias=False)),
             # -> 1 x 1 x 1
         )
 

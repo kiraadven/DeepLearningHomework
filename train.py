@@ -32,8 +32,11 @@ def parse_args():
     p.add_argument("--batch_size", type=int, default=Config.batch_size)
     p.add_argument("--epochs", type=int, default=Config.epochs)
     p.add_argument("--lr", type=float, default=Config.lr)
+    p.add_argument("--lr_d", type=float, default=Config.lr_d)
     p.add_argument("--beta1", type=float, default=Config.beta1)
     p.add_argument("--beta2", type=float, default=Config.beta2)
+    p.add_argument("--label_smooth", type=float, default=Config.label_smooth)
+    p.add_argument("--d_noise", type=float, default=Config.d_noise)
     p.add_argument("--z_dim", type=int, default=Config.z_dim)
     p.add_argument("--num_workers", type=int, default=Config.num_workers)
     p.add_argument("--out_dir", type=str, default=Config.out_dir)
@@ -72,12 +75,12 @@ def main():
 
     # ---- Loss & Optim ----
     criterion = nn.BCEWithLogitsLoss()
-    opt_G = optim.Adam(G.parameters(), lr=args.lr, betas=(args.beta1, args.beta2))
-    opt_D = optim.Adam(D.parameters(), lr=args.lr, betas=(args.beta1, args.beta2))
+    opt_G = optim.Adam(G.parameters(), lr=args.lr,   betas=(args.beta1, args.beta2))
+    opt_D = optim.Adam(D.parameters(), lr=args.lr_d, betas=(args.beta1, args.beta2))
 
     # Fixed noise for visualizing training progress
     fixed_noise = torch.randn(64, args.z_dim, 1, 1, device=device)
-    real_label, fake_label = 1.0, 0.0
+    real_label, fake_label = args.label_smooth, 0.0
 
     start_epoch = 0
     if args.resume and os.path.exists(args.resume):
@@ -102,9 +105,12 @@ def main():
 
             # ---------------- (1) Update D ----------------
             D.zero_grad()
+            # instance noise on D inputs — softens the decision boundary
+            def _noisy(x):
+                return x + args.d_noise * torch.randn_like(x) if args.d_noise > 0 else x
             # real
             label_real = torch.full((b,), real_label, device=device)
-            out_real = D(real)
+            out_real = D(_noisy(real))
             loss_D_real = criterion(out_real, label_real)
             loss_D_real.backward()
             D_x = torch.sigmoid(out_real).mean().item()
@@ -112,7 +118,7 @@ def main():
             noise = torch.randn(b, args.z_dim, 1, 1, device=device)
             fake = G(noise)
             label_fake = torch.full((b,), fake_label, device=device)
-            out_fake = D(fake.detach())
+            out_fake = D(_noisy(fake.detach()))
             loss_D_fake = criterion(out_fake, label_fake)
             loss_D_fake.backward()
             D_G_z1 = torch.sigmoid(out_fake).mean().item()
@@ -121,9 +127,10 @@ def main():
 
             # ---------------- (2) Update G ----------------
             G.zero_grad()
-            # we want D(G(z)) -> 1
-            out_fake2 = D(fake)
-            loss_G = criterion(out_fake2, label_real)
+            # we want D(G(z)) -> 1 (use 1.0, not the smoothed label)
+            out_fake2 = D(_noisy(fake))
+            target_G = torch.full((b,), 1.0, device=device)
+            loss_G = criterion(out_fake2, target_G)
             loss_G.backward()
             D_G_z2 = torch.sigmoid(out_fake2).mean().item()
             opt_G.step()

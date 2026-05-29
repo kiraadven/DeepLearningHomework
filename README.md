@@ -25,7 +25,6 @@ dcgan_pytorch/
 ## 1. 安装依赖
 
 ```bash
-cd dcgan_pytorch
 pip install -r requirements.txt
 ```
 
@@ -90,7 +89,7 @@ python train.py \
 python train.py --resume checkpoints/latest.pt --epochs 80
 ```
 
-显存参考：单卡 24 GB，batch 128，64×64，约 5 GB。  
+显存参考：单卡 24 GB，batch 128，64×64，约 5 GB。
 LFW 较小（~13k 张），通常 30–50 个 epoch 即可看到较稳定的人脸。
 
 ## 4. 生成图像
