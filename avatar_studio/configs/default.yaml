@@ -14,7 +14,7 @@ checkpoints:
   dlib_landmarks: checkpoints/shape_predictor_68_face_landmarks.dat
   mappers_dir: checkpoints/mappers
   styles_dir:  checkpoints/styles
-  pti_cache:   checkpoints/pti_cache
+  inversion_cache: checkpoints/inversion_cache
 
 # StyleCLIP Mapper training
 mapper:
@@ -32,12 +32,3 @@ mapper:
   lambda_l2:   0.8
   log_every:   200
   save_every:  5000
-
-# PTI
-pti:
-  steps: 350
-  lr: 3.0e-4
-  lambda_lpips: 1.0
-  lambda_l2:    1.0
-  lambda_locality: 0.1   # keep nearby latents stable
-  locality_samples: 1

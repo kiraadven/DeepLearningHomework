@@ -161,9 +161,3 @@ python evaluate.py --ckpt checkpoints/latest.pt --num 10000
 | LFW   | 13k  | 64×64, bs 128 | ~ 20 s |
 | CelebA | 200k | 64×64, bs 128 | ~ 5 min |
 
-## 10. 常见问题
-
-- *No images found under ./data/lfw* — 路径写错或压缩包没解压。`dataset.py` 是递归
-  搜索的，只要 `data_root` 下任意层级有 `.jpg` 就行。
-- *CUDA OOM* — 降低 `--batch_size`，或把 `--image_size` 维持 64。
-- *Mode collapse（所有生成图长一个样）* — 见上面的 Bonus 思路。

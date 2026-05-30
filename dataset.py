@@ -49,7 +49,7 @@ class FlatImageDataset(Dataset):
         return img
 
 
-def build_transform(image_size, center_crop=None):
+def build_transform(image_size, center_crop=None, hflip_p=0.0):
     """Standard DCGAN preprocessing: resize -> center-crop -> [-1, 1]."""
     ops = []
     if center_crop is not None:
@@ -58,6 +58,8 @@ def build_transform(image_size, center_crop=None):
         ops.append(T.CenterCrop(center_crop))
     ops.append(T.Resize(image_size))
     ops.append(T.CenterCrop(image_size))
+    if hflip_p > 0:
+        ops.append(T.RandomHorizontalFlip(p=hflip_p))
     ops.append(T.ToTensor())
     ops.append(T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
     return T.Compose(ops)
@@ -68,16 +70,20 @@ def get_dataloader(cfg):
     if cfg.dataset.lower() == "lfw":
         # LFW images are 250x250 with the face roughly centered;
         # crop the central 178 then resize for a face-tight 64x64.
-        tfm = build_transform(cfg.image_size, center_crop=178)
+        tfm = build_transform(
+            cfg.image_size, center_crop=178, hflip_p=getattr(cfg, "hflip_p", 0.0)
+        )
         ds = FlatImageDataset(cfg.data_root, transform=tfm)
 
     elif cfg.dataset.lower() == "celeba":
         # CelebA aligned: 178x218, classic recipe is center-crop 178.
-        tfm = build_transform(cfg.image_size, center_crop=178)
+        tfm = build_transform(
+            cfg.image_size, center_crop=178, hflip_p=getattr(cfg, "hflip_p", 0.0)
+        )
         ds = FlatImageDataset(cfg.data_root, transform=tfm)
 
     elif cfg.dataset.lower() == "folder":
-        tfm = build_transform(cfg.image_size)
+        tfm = build_transform(cfg.image_size, hflip_p=getattr(cfg, "hflip_p", 0.0))
         ds = FlatImageDataset(cfg.data_root, transform=tfm)
 
     else:

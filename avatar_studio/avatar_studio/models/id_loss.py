@@ -3,7 +3,7 @@
 Backbone reuses the canonical implementation vendored from
 `InsightFace_Pytorch/model.py` (TreB1eN/InsightFace_Pytorch) at
 `avatar_studio/vendor/insightface_model.py` — that is the same source the
-StyleCLIP / encoder4editing / PTI ecosystem expects `model_ir_se50.pth`
+StyleCLIP / encoder4editing ecosystem expects `model_ir_se50.pth`
 weights for.
 
 We add a thin loss wrapper that does the StyleCLIP-style face crop and

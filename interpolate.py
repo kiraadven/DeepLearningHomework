@@ -34,6 +34,7 @@ def parse_args():
     p.add_argument("--seed", type=int, default=Config.seed)
     p.add_argument("--z_dim", type=int, default=Config.z_dim)
     p.add_argument("--device", type=str, default=Config.device)
+    p.add_argument("--use_ema", action="store_true", default=Config.use_ema_for_eval)
     return p.parse_args()
 
 
@@ -44,7 +45,10 @@ def main():
 
     G = Generator(z_dim=args.z_dim).to(device)
     ckpt = torch.load(args.ckpt, map_location=device)
-    G.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
+    if isinstance(ckpt, dict) and args.use_ema and ckpt.get("G_ema") is not None:
+        G.load_state_dict(ckpt["G_ema"])
+    else:
+        G.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
     G.eval()
 
     interp_fn = slerp if args.mode == "slerp" else lerp

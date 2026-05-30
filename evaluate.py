@@ -37,6 +37,7 @@ def parse_args():
     p.add_argument("--fake_dir", type=str, default=Config.fid_fake_dir)
     p.add_argument("--z_dim", type=int, default=Config.z_dim)
     p.add_argument("--device", type=str, default=Config.device)
+    p.add_argument("--use_ema", action="store_true", default=Config.use_ema_for_eval)
     p.add_argument("--skip_real", action="store_true",
                    help="reuse existing real_dir without re-dumping.")
     return p.parse_args()
@@ -94,7 +95,10 @@ def main():
     # 2. fake images
     G = Generator(z_dim=args.z_dim).to(device)
     ckpt = torch.load(args.ckpt, map_location=device)
-    G.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
+    if isinstance(ckpt, dict) and args.use_ema and ckpt.get("G_ema") is not None:
+        G.load_state_dict(ckpt["G_ema"])
+    else:
+        G.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
     dump_fake_images(G, args.fake_dir, args.num, args.z_dim, args.batch, device)
 
     # 3. metrics via torch-fidelity (FID + Inception Score)

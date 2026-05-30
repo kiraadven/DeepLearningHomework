@@ -5,18 +5,15 @@ Examples:
     # 1. random face
     python scripts/generate.py --out out/random.png
 
-    # 2. text-driven via global direction (no training)
-    python scripts/generate.py --text "smiling" --global_direction --out out/smile.png
-
-    # 3. text-driven via trained mapper
+    # 2. text-driven via trained mapper
     python scripts/generate.py --mapper red_curly --out out/red.png
 
-    # 4. real photo + style swap
-    python scripts/generate.py --ref alice.jpg --style anime --use_pti --out out/alice_anime.png
+    # 3. real photo + style swap
+    python scripts/generate.py --ref alice.jpg --style anime --out out/alice_anime.png
 
-    # 5. full combo
+    # 4. full combo
     python scripts/generate.py --ref alice.jpg --style anime --mapper red_curly \
-        --use_pti --strength 0.15 --out out/alice_anime_red.png
+        --strength 0.15 --out out/alice_anime_red.png
 """
 from __future__ import annotations
 import argparse
@@ -36,14 +33,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--config", default=None)
     p.add_argument("--text", default=None, help="text prompt")
-    p.add_argument("--src_text", default="face", help="source class for global-direction edit")
     p.add_argument("--ref", default=None, help="path to reference photo")
     p.add_argument("--style", default=None, help="style name (matches checkpoints/styles/<name>.pt)")
     p.add_argument("--mapper", default=None, help="mapper name (matches checkpoints/mappers/<name>.pt)")
-    p.add_argument("--global_direction", action="store_true",
-                   help="use training-free CLIP direction (alternative to --mapper)")
     p.add_argument("--strength", type=float, default=0.1)
-    p.add_argument("--use_pti", action="store_true")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--out", default="outputs/result.png")
     args = p.parse_args()
@@ -54,16 +47,12 @@ def main():
         ref_image=args.ref,
         style=args.style,
         mapper=args.mapper,
-        use_global_direction=args.global_direction,
-        src_text=args.src_text,
         strength=args.strength,
-        use_pti=args.use_pti,
         seed=args.seed,
     )
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     res.image.save(args.out)
-    _log.info("wrote %s  (style=%s, text=%r, pti=%s)",
-              args.out, res.style, res.text, res.used_pti)
+    _log.info("wrote %s  (style=%s, text=%r)", args.out, res.style, res.text)
 
 
 if __name__ == "__main__":

@@ -19,13 +19,16 @@ class Config:
     # --------- Training ---------
     batch_size = 128
     num_workers = 4
-    epochs = 25
+    epochs = 80
     lr = 2e-4                   # base lr (used for G)
-    lr_d = 1e-4                 # TTUR: D learns slower so G can keep up
+    lr_d = 2e-4                 # keep D/G pace matched for faster early convergence
     beta1 = 0.5                 # Adam beta1, classic DCGAN value
     beta2 = 0.999
-    label_smooth = 0.9          # real label = 0.9 instead of 1.0
-    d_noise = 0.05              # std of gaussian noise added to D inputs (0 to disable)
+    label_smooth = 1.0          # keep targets sharp by default
+    d_noise = 0.0               # disable instance noise by default
+    hflip_p = 0.0               # disable augmentation by default
+    ema_decay = 0.0             # disable EMA by default (turn on after baseline is stable)
+    use_ema_for_eval = True     # prefer EMA weights in generate/evaluate/interpolate
 
     # --------- Logging / Saving ---------
     out_dir = "./checkpoints"

@@ -10,6 +10,7 @@ data/
 *.pt
 *.pth
 *.ckpt
+*.dat
 
 # OS / editor
 .DS_Store

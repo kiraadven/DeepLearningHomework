@@ -3,8 +3,7 @@
 Combines:
   - StyleGAN2-FFHQ (base) or a NADA/JoJoGAN-finetuned G (style swap)
   - e4e inversion (optional reference photo)
-  - PTI fine-tune (optional identity lock)
-  - StyleCLIP Mapper or training-free global directions (text edits)
+  - StyleCLIP Mapper text edits
 
 Typical usage:
 
@@ -12,12 +11,10 @@ Typical usage:
     img = pipe.generate(text="a person with blue hair",   # text only
                         style="anime",                    # optional style
                         ref_image="alice.jpg",            # optional photo
-                        use_pti=True,
                         seed=42)
 """
 from __future__ import annotations
-from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 import threading
@@ -26,11 +23,8 @@ import torch
 
 from .config import load_config, resolve_path
 from .models.stylegan2 import StyleGAN2Generator
-from .models.clip_loss import GlobalCLIPLoss
 from .models.e4e import E4EInverter, invert_image
-from .edit.mapper import MapperInferer, LevelsMapper, MapperConfig
-from .edit.global_direction import GlobalDirectionBuilder, GlobalDirConfig
-from .finetune.pti import PTI, PTIConfig
+from .edit.mapper import MapperInferer
 from .utils.image import align_face, pil_to_tensor, tensor_to_pil
 from .utils.logger import get_logger
 
@@ -43,7 +37,6 @@ class GenerateResult:
     image: PIL.Image.Image
     wplus: torch.Tensor               # final W+ used
     seed: Optional[int] = None
-    used_pti: bool = False
     used_ref: bool = False
     style: Optional[str] = None
     text: Optional[str] = None
@@ -68,14 +61,9 @@ class AvatarPipeline:
             device=self.device,
         )
 
-        _log.info("loading CLIP ...")
-        self.clip = GlobalCLIPLoss(self.device)        # also serves as encoder
-
         # caches
         self._style_Gs: dict[str, StyleGAN2Generator] = {}
         self._mapper_cache: dict[str, MapperInferer] = {}
-        self._global_dir_cache: dict[tuple[str, str], list] = {}
-        self._pti_cache: dict[str, StyleGAN2Generator] = {}
         self._e4e: Optional[E4EInverter] = None
         self._lock = threading.RLock()                 # multi-threaded API safety
 
@@ -114,26 +102,6 @@ class AvatarPipeline:
         self._mapper_cache[name] = m
         return m
 
-    # --------------------------- global direction --------------------
-
-    def _global_direction_builder(self) -> GlobalDirectionBuilder:
-        if not hasattr(self, "_gdir_builder") or self._gdir_builder is None:
-            cache_dir = Path(resolve_path(self.cfg, self.cfg.checkpoints.pti_cache)).parent / "global_dirs"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            builder = GlobalDirectionBuilder(self.G_base, self.clip, GlobalDirConfig(), self.device)
-            builder.prepare(cache_path=str(cache_dir / "fs3.npy"))
-            self._gdir_builder = builder
-        return self._gdir_builder
-
-    def _global_direction(self, src: str, tgt: str):
-        key = (src, tgt)
-        if key in self._global_dir_cache:
-            return self._global_dir_cache[key]
-        builder = self._global_direction_builder()
-        deltas = builder.direction(src, tgt)
-        self._global_dir_cache[key] = deltas
-        return deltas
-
     # --------------------------- inversion ---------------------------
 
     def _invert(self, ref_image: str | PIL.Image.Image) -> tuple[torch.Tensor, torch.Tensor]:
@@ -146,7 +114,7 @@ class AvatarPipeline:
             if aligned.size != (self.cfg.image_size, self.cfg.image_size):
                 aligned = aligned.resize((self.cfg.image_size, self.cfg.image_size),
                                          PIL.Image.LANCZOS)
-        cache_dir = Path(resolve_path(self.cfg, self.cfg.checkpoints.pti_cache))
+        cache_dir = Path(resolve_path(self.cfg, self.cfg.checkpoints.inversion_cache))
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / "last_inversion.pt"
         if self._e4e is None:
@@ -162,15 +130,6 @@ class AvatarPipeline:
                              inverter=self._e4e)
         target = pil_to_tensor(aligned, size=self.cfg.image_size).to(self.device)
         return wplus, target
-
-    def _run_pti(self, ref_image_id: str, target: torch.Tensor, pivot: torch.Tensor
-                 ) -> StyleGAN2Generator:
-        if ref_image_id in self._pti_cache:
-            return self._pti_cache[ref_image_id]
-        pti = PTI(self.G_base, PTIConfig(**self.cfg.pti.__dict__), self.device)
-        G_tuned = pti.run(target, pivot)
-        self._pti_cache[ref_image_id] = G_tuned
-        return G_tuned
 
     # --------------------------- core API ----------------------------
 
@@ -194,18 +153,13 @@ class AvatarPipeline:
                  style: Optional[str] = None,
                  mapper: Optional[str] = None,
                  strength: float = 0.1,
-                 use_pti: bool = False,
-                 use_global_direction: bool = False,
-                 src_text: str = "face",
                  seed: Optional[int] = None,
                  ) -> GenerateResult:
         """Run end-to-end generation.
 
         Mutually compatible flags (you can mix):
           text + mapper                  → mapper-based attribute edit
-          text + use_global_direction    → training-free CLIP direction edit
           ref_image                      → e4e inversion (sets w from photo)
-          ref_image + use_pti            → also fine-tune G for identity
           style                          → swap to a NADA-trained G
 
         Without any flags: returns a random truncated face from the base G.
@@ -213,39 +167,27 @@ class AvatarPipeline:
         with self._lock:
             # ---- 1. choose G ----
             G = self._load_style_G(style) if style else self.G_base
-            if use_pti and ref_image is None:
-                raise ValueError("use_pti requires ref_image.")
 
             # ---- 2. compute pivot w+ ----
             if ref_image is not None:
-                wplus, target = self._invert(ref_image)
-                if use_pti:
-                    rid = ref_image if isinstance(ref_image, str) else "inline"
-                    G = self._run_pti(rid, target, wplus)
+                wplus, _target = self._invert(ref_image)
             else:
                 wplus = self._sample_w(seed)
 
             # ---- 3. text edit ----
-            global_deltas = None
-            if text and (mapper or use_global_direction):
-                if mapper:
-                    m = self._load_mapper(mapper)
-                    wplus = m.edit(wplus, strength=strength)
-                else:
-                    global_deltas = self._global_direction(src_text, text)
+            if text and not mapper:
+                raise ValueError("text edit requires --mapper in mapper-only mode.")
+            if text and mapper:
+                m = self._load_mapper(mapper)
+                wplus = m.edit(wplus, strength=strength)
 
             # ---- 4. render ----
-            if global_deltas is not None:
-                # S-space direction: inject ΔS into modulation layers during synth.
-                builder = self._global_direction_builder()
-                img = builder.apply(wplus, global_deltas)
-            else:
-                img = G.synthesize(wplus)
+            img = G.synthesize(wplus)
             pil = tensor_to_pil(img)
 
             return GenerateResult(
                 image=pil, wplus=wplus.detach().cpu(),
-                seed=seed, used_pti=use_pti, used_ref=ref_image is not None,
+                seed=seed, used_ref=ref_image is not None,
                 style=style, text=text,
             )
 

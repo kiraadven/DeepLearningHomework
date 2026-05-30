@@ -1,7 +1,7 @@
-"""Standalone GAN inversion: aligns a face, runs e4e, optionally runs PTI,
+"""Standalone GAN inversion: aligns a face, runs e4e,
 saves the resulting W+ latent and the recovered image.
 
-    python scripts/invert.py --input alice.jpg --output_dir out/alice/ --use_pti
+    python scripts/invert.py --input alice.jpg --output_dir out/alice/
 """
 from __future__ import annotations
 import argparse
@@ -14,8 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from avatar_studio.config import load_config, resolve_path
 from avatar_studio.models.stylegan2 import StyleGAN2Generator
 from avatar_studio.models.e4e import invert_image
-from avatar_studio.finetune.pti import PTI, PTIConfig
-from avatar_studio.utils.image import align_face, pil_to_tensor, save_image
+from avatar_studio.utils.image import align_face, save_image
 from avatar_studio.utils.logger import get_logger
 
 
@@ -27,7 +26,6 @@ def main():
     p.add_argument("--config", default=None)
     p.add_argument("--input", required=True)
     p.add_argument("--output_dir", required=True)
-    p.add_argument("--use_pti", action="store_true")
     args = p.parse_args()
 
     cfg = load_config(args.config)
@@ -58,15 +56,6 @@ def main():
     torch.save(wplus.detach().cpu(), out / "wplus.pt")
     with torch.no_grad():
         save_image(G.synthesize(wplus), out / "e4e_recon.png")
-
-    if args.use_pti:
-        target = pil_to_tensor(aligned, size=cfg.image_size).to(device)
-        pti = PTI(G, PTIConfig(**cfg.pti.__dict__), device)
-        G_tuned = pti.run(target, wplus)
-        PTI.save(G_tuned, out / "pti_g.pt")
-        with torch.no_grad():
-            save_image(G_tuned.synthesize(wplus), out / "pti_recon.png")
-        _log.info("PTI generator saved to %s", out / "pti_g.pt")
 
     _log.info("done -> %s", out)
 

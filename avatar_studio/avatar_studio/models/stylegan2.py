@@ -5,7 +5,6 @@ The underlying rosinality StyleGAN2 implementation lives under
 so the latent space stays compatible with the e4e encoder).
 """
 from __future__ import annotations
-from copy import deepcopy
 import torch
 import torch.nn as nn
 
@@ -88,15 +87,6 @@ class StyleGAN2Generator(nn.Module):
     def synthesize(self, wplus: torch.Tensor) -> torch.Tensor:
         """Render a W+ tensor (B, n_latent, 512) to image in [-1, 1]."""
         return self.forward(wplus, input_is_latent=True)
-
-    def clone_trainable(self) -> "StyleGAN2Generator":
-        """Deep-copy for PTI: returns a copy whose G is set to train()."""
-        new = deepcopy(self)
-        new.G.train()
-        for p in new.G.parameters():
-            p.requires_grad = True
-        return new
-
 
 class StyleGAN2Discriminator(nn.Module):
     """Optional: pretrained D, useful as a perceptual feature extractor (à la JoJoGAN)."""

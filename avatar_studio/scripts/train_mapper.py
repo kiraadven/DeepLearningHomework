@@ -50,6 +50,10 @@ def main():
 
     cfg = load_config(args.config)
     device = cfg.device
+    if device.startswith("cuda"):
+        # Respect CUDA_VISIBLE_DEVICES per process. Inside each process,
+        # the selected GPU is exposed as cuda:0.
+        device = "cuda:0"
 
     mcfg = cfg.mapper
     tcfg = TrainConfig(

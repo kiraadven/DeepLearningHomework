@@ -17,6 +17,7 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+from copy import deepcopy
 
 from config import Config
 from models import Generator, Discriminator, weights_init
@@ -37,6 +38,9 @@ def parse_args():
     p.add_argument("--beta2", type=float, default=Config.beta2)
     p.add_argument("--label_smooth", type=float, default=Config.label_smooth)
     p.add_argument("--d_noise", type=float, default=Config.d_noise)
+    p.add_argument("--hflip_p", type=float, default=Config.hflip_p)
+    p.add_argument("--ema_decay", type=float, default=Config.ema_decay)
+    p.add_argument("--use_ema_for_eval", action="store_true", default=Config.use_ema_for_eval)
     p.add_argument("--z_dim", type=int, default=Config.z_dim)
     p.add_argument("--num_workers", type=int, default=Config.num_workers)
     p.add_argument("--out_dir", type=str, default=Config.out_dir)
@@ -72,6 +76,10 @@ def main():
     D = Discriminator().to(device)
     G.apply(weights_init)
     D.apply(weights_init)
+    G_ema = deepcopy(G).eval() if args.ema_decay > 0 else None
+    if G_ema is not None:
+        for p in G_ema.parameters():
+            p.requires_grad_(False)
 
     # ---- Loss & Optim ----
     criterion = nn.BCEWithLogitsLoss()
@@ -86,6 +94,8 @@ def main():
     if args.resume and os.path.exists(args.resume):
         ckpt = torch.load(args.resume, map_location=device)
         G.load_state_dict(ckpt["G"])
+        if G_ema is not None and "G_ema" in ckpt:
+            G_ema.load_state_dict(ckpt["G_ema"])
         D.load_state_dict(ckpt["D"])
         opt_G.load_state_dict(ckpt["opt_G"])
         opt_D.load_state_dict(ckpt["opt_D"])
@@ -99,6 +109,8 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         t0 = time.time()
         pbar = tqdm(loader, desc=f"Epoch {epoch+1}/{args.epochs}")
+        # Linearly anneal discriminator input noise to 0 by the last epoch.
+        noise_std = args.d_noise * max(0.0, 1.0 - epoch / max(args.epochs - 1, 1))
         for i, real in enumerate(pbar):
             real = real.to(device, non_blocking=True)
             b = real.size(0)
@@ -107,7 +119,7 @@ def main():
             D.zero_grad()
             # instance noise on D inputs — softens the decision boundary
             def _noisy(x):
-                return x + args.d_noise * torch.randn_like(x) if args.d_noise > 0 else x
+                return x + noise_std * torch.randn_like(x) if noise_std > 0 else x
             # real
             label_real = torch.full((b,), real_label, device=device)
             out_real = D(_noisy(real))
@@ -128,12 +140,16 @@ def main():
             # ---------------- (2) Update G ----------------
             G.zero_grad()
             # we want D(G(z)) -> 1 (use 1.0, not the smoothed label)
-            out_fake2 = D(_noisy(fake))
+            out_fake2 = D(fake)
             target_G = torch.full((b,), 1.0, device=device)
             loss_G = criterion(out_fake2, target_G)
             loss_G.backward()
             D_G_z2 = torch.sigmoid(out_fake2).mean().item()
             opt_G.step()
+            if G_ema is not None:
+                with torch.no_grad():
+                    for p_ema, p in zip(G_ema.parameters(), G.parameters()):
+                        p_ema.mul_(args.ema_decay).add_(p, alpha=1.0 - args.ema_decay)
 
             # ---------------- Logging ----------------
             if global_step % args.log_every == 0:
@@ -150,9 +166,10 @@ def main():
                 writer.add_scalar("D/fake_after", D_G_z2, global_step)
 
             if global_step % args.sample_every == 0:
-                G.eval()
+                G_eval = G_ema if (args.use_ema_for_eval and G_ema is not None) else G
+                G_eval.eval()
                 with torch.no_grad():
-                    fake_grid = G(fixed_noise)
+                    fake_grid = G_eval(fixed_noise)
                 save_image_grid(
                     fake_grid,
                     os.path.join(args.sample_dir, f"iter_{global_step:07d}.png"),
@@ -168,6 +185,7 @@ def main():
         if (epoch + 1) % args.save_every == 0:
             ckpt = {
                 "G": G.state_dict(),
+                "G_ema": G_ema.state_dict() if G_ema is not None else None,
                 "D": D.state_dict(),
                 "opt_G": opt_G.state_dict(),
                 "opt_D": opt_D.state_dict(),
