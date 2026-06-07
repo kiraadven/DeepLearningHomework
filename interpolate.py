@@ -40,7 +40,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    set_seed(args.seed)
+    # set_seed(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     G = Generator(z_dim=args.z_dim).to(device)

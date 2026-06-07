@@ -9,7 +9,6 @@ venv/
 
 # Data & checkpoints (too large for git)
 data/
-*.pt
 *.pth
 *.ckpt
 *.dat
