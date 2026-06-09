@@ -24,7 +24,7 @@
 \newcommand{\figwidetall}{0.55\linewidth}
 
 \title{\bfseries 基于生成对抗网络的人头图像生成与可控编辑}
-\author{深度学习课程项目报告}
+\author{葛思如、杨骐宁}
 \date{\today}
 
 \begin{document}
@@ -273,11 +273,32 @@ pastel\_split     & a pastel split-color hairstyle portrait \\
 对滑动平均生成器各采样 $10^4$ 张样本，
 并从真实数据集按相同预处理保存等量的图像，
 在统一脚本下同时计算 Fr\'echet Inception Distance 与 Inception Score。
-基线在 $64\times 64$ 分辨率下的 FID 处于 30 至 50 区间，
-IS 处于 2.0 至 2.5 区间，与公开实现的复现结果区间一致；
-在该分辨率与网络容量的限制下，分数与高分辨率风格化生成器
-的最优结果（FID 约为 2.8）尚有显著差距，
-这也是引入进阶分支的主要动机之一。
+其中，FID 用于衡量生成样本与真实样本在 Inception 特征空间中的分布距离，
+数值越低说明生成分布越接近真实分布；Inception Score 则同时刻画样本的清晰度与多样性，
+数值越高通常表示生成质量越好。考虑到 Inception Score 对采样划分存在一定波动，
+我们同时报告均值与标准差。
+
+基线模型的定量评估结果如表~\ref{tab:baseline-eval} 所示。
+在 $64\times 64$ 分辨率下，模型取得了 FID 为 15.74847、Inception Score 为
+2.609323 $\pm$ 0.05265605 的结果。
+这说明基线模型已经能够生成具有一定清晰度与多样性的脸部样本，
+但与高分辨率风格化生成器在样本逼真度与细节表现上的上限相比，
+仍然存在明显差距，这也是后续引入进阶分支的主要动机之一。
+
+\begin{table}[H]
+\centering
+\caption{基线模型的定量评估结果。}
+\label{tab:baseline-eval}
+\small
+\begin{tabular}{lc}
+\toprule
+指标 & 数值 \\
+\midrule
+Fr\'echet Inception Distance $\downarrow$ & 15.74847 \\
+Inception Score $\uparrow$ & $2.609323 \pm 0.05265605$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{进阶分支：分层潜空间映射器训练}
 对十条文本描述各独立训练一个分层潜空间映射器，
